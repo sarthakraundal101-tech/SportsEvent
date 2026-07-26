@@ -13,7 +13,7 @@ const MONGO_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/sports_e
 app.use(cors());
 app.use(express.json());
 
-// Persistent File DB Path (Fallback if MongoDB service is not running locally)
+// Persistent File DB Path
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
@@ -67,71 +67,18 @@ mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 2000 })
   .then(async () => {
     isMongoConnected = true;
     console.log(`✅ MongoDB Connected Successfully to ${MONGO_URI}`);
-    
-    // Seed initial data if MongoDB collections are empty
-    const count = await EventModel.countDocuments();
-    if (count === 0) {
-      await seedMongoInitialData();
-    }
   })
   .catch((err) => {
     isMongoConnected = false;
     console.log(`ℹ️ Local MongoDB server not detected (${err.message}). Using persistent JSON database storage (data/db.json).`);
   });
 
-// Default initial data for file DB & MongoDB seeding
+// Initial empty data container
 const defaultData = {
-  events: [
-    {
-      id: "evt-1",
-      title: "RSS Cyber Sports Championship 2026",
-      sportCategory: "Basketball",
-      location: "Rich Arena, Mumbai",
-      startDate: "2026-08-01",
-      endDate: "2026-08-05",
-      status: "Active",
-      maxTeams: 8,
-      description: "Annual elite tournament featuring top varsity & club sports teams competing for the RSS Trophy."
-    },
-    {
-      id: "evt-2",
-      title: "National Football League Cup",
-      sportCategory: "Soccer",
-      location: "National Stadium",
-      startDate: "2026-08-10",
-      endDate: "2026-08-15",
-      status: "Upcoming",
-      maxTeams: 16,
-      description: "Premier knockout tournament with AI bracket seeding and live skill leaderboard."
-    }
-  ],
-  teams: [
-    { id: "tm-1", eventId: "evt-1", name: "Titan Strikers", captain: "Alex Vance", skill_rating: 1540, seed: 1, wins: 4, losses: 1, points_scored: 185, points_conceded: 140 },
-    { id: "tm-2", eventId: "evt-1", name: "Apex Warriors", captain: "Marcus Blade", skill_rating: 1480, seed: 2, wins: 3, losses: 1, points_scored: 160, points_conceded: 135 },
-    { id: "tm-3", eventId: "evt-1", name: "Vortex Eagles", captain: "Sarah Connor", skill_rating: 1390, seed: 3, wins: 2, losses: 2, points_scored: 150, points_conceded: 155 },
-    { id: "tm-4", eventId: "evt-1", name: "Shadow Ninjas", captain: "David Miller", skill_rating: 1320, seed: 4, wins: 2, losses: 2, points_scored: 140, points_conceded: 145 },
-    { id: "tm-5", eventId: "evt-1", name: "Cyber Knights", captain: "Elena Rostova", skill_rating: 1250, seed: 5, wins: 1, losses: 3, points_scored: 130, points_conceded: 160 },
-    { id: "tm-6", eventId: "evt-1", name: "Thunder Kings", captain: "Rajesh Kumar", skill_rating: 1210, seed: 6, wins: 1, losses: 3, points_scored: 125, points_conceded: 155 },
-    { id: "tm-7", eventId: "evt-1", name: "Blaze Lynx", captain: "Sophie Turner", skill_rating: 1150, seed: 7, wins: 0, losses: 4, points_scored: 110, points_conceded: 170 },
-    { id: "tm-8", eventId: "evt-1", name: "Neon Falcons", captain: "Liam Neeson", skill_rating: 1100, seed: 8, wins: 0, losses: 4, points_scored: 105, points_conceded: 175 }
-  ],
-  matches: [
-    { id: "m-101", eventId: "evt-1", round: 1, match_name: "Quarterfinal 1", team1_id: "tm-1", team2_id: "tm-8", team1_score: 98, team2_score: 72, winner_id: "tm-1", status: "Completed" },
-    { id: "m-102", eventId: "evt-1", round: 1, match_name: "Quarterfinal 2", team1_id: "tm-4", team2_id: "tm-5", team1_score: 85, team2_score: 81, winner_id: "tm-4", status: "Completed" },
-    { id: "m-103", eventId: "evt-1", round: 1, match_name: "Quarterfinal 3", team1_id: "tm-2", team2_id: "tm-7", team1_score: 102, team2_score: 68, winner_id: "tm-2", status: "Completed" },
-    { id: "m-104", eventId: "evt-1", round: 1, match_name: "Quarterfinal 4", team1_id: "tm-3", team2_id: "tm-6", team1_score: 91, team2_score: 84, winner_id: "tm-3", status: "Completed" },
-    { id: "m-105", eventId: "evt-1", round: 2, match_name: "Semifinal 1", team1_id: "tm-1", team2_id: "tm-4", team1_score: 94, team2_score: 88, winner_id: "tm-1", status: "Completed" },
-    { id: "m-106", eventId: "evt-1", round: 2, match_name: "Semifinal 2", team1_id: "tm-2", team2_id: "tm-3", team1_score: 0, team2_score: 0, winner_id: null, status: "Scheduled" },
-    { id: "m-107", eventId: "evt-1", round: 3, match_name: "Championship Final", team1_id: "tm-1", team2_id: null, team1_score: 0, team2_score: 0, winner_id: null, status: "Scheduled" }
-  ]
+  events: [],
+  teams: [],
+  matches: []
 };
-
-async function seedMongoInitialData() {
-  await EventModel.insertMany(defaultData.events);
-  await TeamModel.insertMany(defaultData.teams);
-  await MatchModel.insertMany(defaultData.matches);
-  console.log("🌱 MongoDB seeded with initial tournament data.");
-}
 
 // Ensure data folder exists for JSON fallback
 if (!fs.existsSync(DATA_DIR)) {
@@ -163,32 +110,22 @@ let db = loadDB();
 
 // Helper fallback bracket generator
 function generateFallbackBracket(teamList) {
+  if (!teamList || teamList.length === 0) {
+    return { rounds: [], ai_summary: "No teams available to generate bracket. Please register teams first." };
+  }
   const sorted = [...teamList].sort((a, b) => (b.skill_rating || 1200) - (a.skill_rating || 1200));
   const rounds = [
     {
       round_number: 1,
-      round_name: "Quarterfinals",
-      matches: [
-        { match_id: "R1-M1", round: 1, round_name: "Quarterfinal 1", team1: sorted[0], team2: sorted[7], ai_insights: { team1_win_probability: 0.85, team2_win_probability: 0.15, predicted_winner_id: sorted[0]?.id } },
-        { match_id: "R1-M2", round: 1, round_name: "Quarterfinal 2", team1: sorted[3], team2: sorted[4], ai_insights: { team1_win_probability: 0.54, team2_win_probability: 0.46, predicted_winner_id: sorted[3]?.id } },
-        { match_id: "R1-M3", round: 1, round_name: "Quarterfinal 3", team1: sorted[1], team2: sorted[6], ai_insights: { team1_win_probability: 0.78, team2_win_probability: 0.22, predicted_winner_id: sorted[1]?.id } },
-        { match_id: "R1-M4", round: 1, round_name: "Quarterfinal 4", team1: sorted[2], team2: sorted[5], ai_insights: { team1_win_probability: 0.62, team2_win_probability: 0.38, predicted_winner_id: sorted[2]?.id } },
-      ]
-    },
-    {
-      round_number: 2,
-      round_name: "Semifinals",
-      matches: [
-        { match_id: "R2-M1", round: 2, round_name: "Semifinal 1", team1: null, team2: null, ai_insights: { team1_win_probability: 0.5, team2_win_probability: 0.5 } },
-        { match_id: "R2-M2", round: 2, round_name: "Semifinal 2", team1: null, team2: null, ai_insights: { team1_win_probability: 0.5, team2_win_probability: 0.5 } },
-      ]
-    },
-    {
-      round_number: 3,
-      round_name: "Finals",
-      matches: [
-        { match_id: "R3-M1", round: 3, round_name: "Grand Final", team1: null, team2: null, ai_insights: { team1_win_probability: 0.5, team2_win_probability: 0.5 } }
-      ]
+      round_name: "Round 1",
+      matches: sorted.map((t, idx) => ({
+        match_id: `R1-M${idx+1}`,
+        round: 1,
+        round_name: `Match ${idx+1}`,
+        team1: t,
+        team2: null,
+        ai_insights: { team1_win_probability: 1.0, team2_win_probability: 0.0, predicted_winner_id: t.id }
+      }))
     }
   ];
   return { rounds, ai_summary: "Generated AI skill-seeded tournament bracket." };
@@ -313,6 +250,13 @@ app.post('/api/ai/generate-bracket', async (req, res) => {
     ? await TeamModel.find({ eventId: eventId || "evt-1" }) 
     : db.teams.filter(t => t.eventId === (eventId || "evt-1"));
 
+  if (!eventTeams || eventTeams.length === 0) {
+    return res.json({
+      rounds: [],
+      ai_summary: "No teams registered for this event yet. Please add teams in the Teams tab."
+    });
+  }
+
   try {
     const aiResponse = await axios.post(`${AI_SERVICE_URL}/ai/generate-bracket`, {
       teams: eventTeams,
@@ -340,6 +284,14 @@ app.post('/api/ai/calculate-rankings', async (req, res) => {
     ? await MatchModel.find({ eventId: targetEvt, status: "Completed" })
     : db.matches.filter(m => m.eventId === targetEvt && m.status === "Completed");
 
+  if (!eventTeams || eventTeams.length === 0) {
+    return res.json({
+      rankings: [],
+      total_processed_matches: 0,
+      ai_model: "Dynamic Margin-Adjusted Elo & Performance Index Engine v1.0"
+    });
+  }
+
   try {
     const aiResponse = await axios.post(`${AI_SERVICE_URL}/ai/calculate-rankings`, {
       teams: eventTeams,
@@ -352,7 +304,7 @@ app.post('/api/ai/calculate-rankings', async (req, res) => {
     const ranked = eventTeams.map((t, idx) => {
       const matchCount = (t.wins || 0) + (t.losses || 0);
       const diff = (t.points_scored || 0) - (t.points_conceded || 0);
-      const rating = t.skill_rating + (t.wins * 25) - (t.losses * 15) + (diff * 0.5);
+      const rating = (t.skill_rating || 1200) + (t.wins * 25) - (t.losses * 15) + (diff * 0.5);
       return {
         ...t,
         rating: Math.round(rating * 10) / 10,
@@ -371,6 +323,20 @@ app.post('/api/ai/calculate-rankings', async (req, res) => {
       ai_model: "Standard Elo Ranking Engine"
     });
   }
+});
+
+// Clear / Reset All Data
+app.delete('/api/admin/clear-data', async (req, res) => {
+  db = { events: [], teams: [], matches: [] };
+  saveDB(db);
+
+  if (isMongoConnected) {
+    await EventModel.deleteMany({});
+    await TeamModel.deleteMany({});
+    await MatchModel.deleteMany({});
+  }
+
+  res.json({ message: "All data cleared successfully." });
 });
 
 app.listen(PORT, () => {
