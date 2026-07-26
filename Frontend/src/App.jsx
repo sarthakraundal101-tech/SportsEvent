@@ -73,6 +73,7 @@ export default function App() {
           <BracketVisualizer 
             selectedEvent={selectedEvent} 
             onOpenScoreModal={(match) => setScoreModalMatch(match)} 
+            onNavigateToEvents={() => setActiveTab('events')}
           />
         )}
 

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { GitBranch, Sparkles, Trophy, Edit3, Shield, Activity } from 'lucide-react';
+import { GitBranch, Sparkles, Trophy, Edit3, Shield, Activity, PlusCircle, CheckCircle } from 'lucide-react';
 import { generateAiBracket } from '../services/api';
 
-export default function BracketVisualizer({ selectedEvent, onOpenScoreModal }) {
+export default function BracketVisualizer({ selectedEvent, onOpenScoreModal, onNavigateToEvents }) {
   const [bracketData, setBracketData] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -19,8 +19,63 @@ export default function BracketVisualizer({ selectedEvent, onOpenScoreModal }) {
     handleGenerateBracket();
   }, [selectedEvent]);
 
+  // Check if final match is completed
+  const lastRound = bracketData?.rounds?.[bracketData.rounds.length - 1];
+  const finalMatch = lastRound?.matches?.[0];
+  const isTournamentEnded = Boolean(finalMatch?.winner_id);
+  const championTeam = isTournamentEnded 
+    ? (finalMatch.winner_id === finalMatch.team1?.id ? finalMatch.team1 : finalMatch.team2) 
+    : null;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {/* Tournament Ended Champion Banner */}
+      {isTournamentEnded && (
+        <div className="glass-panel" style={{
+          padding: '24px 32px',
+          background: 'linear-gradient(135deg, rgba(255, 170, 0, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)',
+          border: '2px solid var(--primary-amber)',
+          boxShadow: '0 0 30px rgba(255, 170, 0, 0.3)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '16px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #ffaa00, #d97706)',
+              padding: '14px',
+              borderRadius: '16px',
+              boxShadow: '0 0 20px rgba(255, 170, 0, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Trophy size={32} color="#0b0f19" />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <span className="badge" style={{ background: 'rgba(255, 170, 0, 0.2)', color: 'var(--primary-amber)', border: '1px solid rgba(255, 170, 0, 0.4)' }}>
+                  <CheckCircle size={14} /> TOURNAMENT CONCLUDED
+                </span>
+              </div>
+              <h2 className="font-heading" style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff' }}>
+                Champion: <span style={{ color: 'var(--primary-amber)' }}>{championTeam?.name || 'Grand Champion'}</span> 👑
+              </h2>
+              <p className="text-muted" style={{ fontSize: '0.9rem' }}>
+                The final match has ended! All scores and AI skill rankings have been finalized.
+              </p>
+            </div>
+          </div>
+
+          <button className="btn btn-primary" onClick={onNavigateToEvents} style={{ padding: '12px 20px', fontSize: '1rem' }}>
+            <PlusCircle size={20} />
+            Add New Tournament
+          </button>
+        </div>
+      )}
+
       {/* Header Banner */}
       <div className="glass-panel" style={{ padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
