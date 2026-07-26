@@ -1,0 +1,23 @@
+# Node dependencies
+node_modules/
+Client/node_modules/
+Backend/server/node_modules/
+
+# Python cache & venv
+__pycache__/
+*.pyc
+Backend/ai_service/__pycache__/
+Backend/ai_service/*.pyc
+.venv/
+venv/
+
+# Builds & dist
+Client/dist/
+dist/
+
+# Local database data
+Backend/server/data/db.json
+
+# Environment & Logs
+.env
+*.log
