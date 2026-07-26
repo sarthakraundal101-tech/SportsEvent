@@ -21,14 +21,7 @@ export default function Navbar({ activeTab, setActiveTab, selectedEvent }) {
             <h2 className="font-heading" style={{ fontSize: '1.4rem', fontWeight: 800 }}>
               SPORTS<span className="gradient-text">MANAGER</span>
             </h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="badge badge-ai">Level 1 - Basic AI</span>
-              {selectedEvent && (
-                <span className="text-muted" style={{ fontSize: '0.8rem' }}>
-                  • {selectedEvent.title}
-                </span>
-              )}
-            </div>
+
           </div>
         </div>
 
