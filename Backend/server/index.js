@@ -108,36 +108,10 @@ function saveDB(dbObj) {
 
 let db = loadDB();
 
-// Helper fallback bracket generator
-function generateFallbackBracket(teamList, savedMatches = []) {
-  if (!teamList || teamList.length === 0) {
-    return { rounds: [], ai_summary: "No teams available to generate bracket. Please register teams first." };
-  }
-  const sorted = [...teamList].sort((a, b) => (b.skill_rating || 1200) - (a.skill_rating || 1200));
-  const matchesMap = new Map(savedMatches.map(m => [m.id, m]));
-
-  const rounds = [
-    {
-      round_number: 1,
-      round_name: "Round 1",
-      matches: sorted.map((t, idx) => {
-        const mId = `R1-M${idx+1}`;
-        const saved = matchesMap.get(mId);
-        return {
-          match_id: mId,
-          round: 1,
-          round_name: `Match ${idx+1}`,
-          team1: t,
-          team2: null,
-          team1_score: saved ? saved.team1_score : 0,
-          team2_score: saved ? saved.team2_score : 0,
-          winner_id: saved ? saved.winner_id : t.id,
-          ai_insights: { team1_win_probability: 1.0, team2_win_probability: 0.0, predicted_winner_id: t.id }
-        };
-      })
-    }
-  ];
-  return { rounds, ai_summary: "Generated AI skill-seeded tournament bracket." };
+// Elo probability helper
+function getWinProb(r1 = 1200, r2 = 1200) {
+  const p1 = 1.0 / (1.0 + Math.pow(10, (r2 - r1) / 400.0));
+  return Math.round(p1 * 100) / 100;
 }
 
 // REST APIs
@@ -317,6 +291,7 @@ app.post('/api/ai/generate-bracket', async (req, res) => {
     : db.matches.filter(m => m.eventId === targetEvt);
 
   const matchesMap = new Map(eventMatches.map(m => [m.id, m]));
+  const teamsMap = new Map(eventTeams.map(t => [t.id, t]));
 
   if (!eventTeams || eventTeams.length === 0) {
     return res.json({
@@ -325,34 +300,86 @@ app.post('/api/ai/generate-bracket', async (req, res) => {
     });
   }
 
+  let bracketRes;
+
   try {
     const aiResponse = await axios.post(`${AI_SERVICE_URL}/ai/generate-bracket`, {
       teams: eventTeams,
       format: "single_elimination",
       seed_by_ai_skill: true
     }, { timeout: 3000 });
-    
-    // Attach saved scores to AI response rounds
-    if (aiResponse.data && aiResponse.data.rounds) {
-      aiResponse.data.rounds.forEach(r => {
-        r.matches.forEach(m => {
-          const saved = matchesMap.get(m.match_id);
-          if (saved) {
-            m.team1_score = saved.team1_score;
-            m.team2_score = saved.team2_score;
-            m.winner_id = saved.winner_id;
-            m.status = saved.status;
-          }
-        });
-      });
-    }
-
-    return res.json(aiResponse.data);
+    bracketRes = aiResponse.data;
   } catch (err) {
     console.log("FastAPI AI Service offline/unreachable, utilizing Node fallback bracket engine.");
-    const fallback = generateFallbackBracket(eventTeams, eventMatches);
-    return res.json(fallback);
+    // Fallback bracket generation logic
+    const sorted = [...eventTeams].sort((a, b) => (b.skill_rating || 1200) - (a.skill_rating || 1200));
+    const r1 = [
+      { match_id: "R1-M1", round: 1, round_name: "Quarterfinal 1", team1: sorted[0], team2: sorted[7] || null },
+      { match_id: "R1-M2", round: 1, round_name: "Quarterfinal 2", team1: sorted[3], team2: sorted[4] || null },
+      { match_id: "R1-M3", round: 1, round_name: "Quarterfinal 3", team1: sorted[1], team2: sorted[6] || null },
+      { match_id: "R1-M4", round: 1, round_name: "Quarterfinal 4", team1: sorted[2], team2: sorted[5] || null },
+    ];
+    const r2 = [
+      { match_id: "R2-M1", round: 2, round_name: "Semifinal 1", team1: null, team2: null },
+      { match_id: "R2-M2", round: 2, round_name: "Semifinal 2", team1: null, team2: null },
+    ];
+    const r3 = [
+      { match_id: "R3-M1", round: 3, round_name: "Grand Final", team1: null, team2: null }
+    ];
+    bracketRes = {
+      rounds: [
+        { round_number: 1, round_name: "Quarterfinals", matches: r1 },
+        { round_number: 2, round_name: "Semifinals", matches: r2 },
+        { round_number: 3, round_name: "Finals", matches: r3 }
+      ],
+      ai_summary: "AI Skill Seeded Bracket Engine."
+    };
   }
+
+  // Populate saved match scores and calculate winner progression across rounds
+  if (bracketRes && bracketRes.rounds) {
+    // Process round by round
+    for (let rIdx = 0; rIdx < bracketRes.rounds.length; rIdx++) {
+      const currentRound = bracketRes.rounds[rIdx];
+      const nextRound = bracketRes.rounds[rIdx + 1];
+
+      currentRound.matches.forEach((m, mIdx) => {
+        const saved = matchesMap.get(m.match_id);
+        if (saved) {
+          m.team1_score = saved.team1_score;
+          m.team2_score = saved.team2_score;
+          m.winner_id = saved.winner_id;
+          m.status = saved.status;
+        }
+
+        // If this match has a winner, advance team to the next round match slot!
+        if (m.winner_id && nextRound) {
+          const winnerTeam = teamsMap.get(m.winner_id) || (m.team1?.id === m.winner_id ? m.team1 : m.team2);
+          const nextMatchIndex = Math.floor(mIdx / 2);
+          const isSecondSlot = mIdx % 2 === 1;
+
+          if (nextRound.matches[nextMatchIndex]) {
+            const targetMatch = nextRound.matches[nextMatchIndex];
+            if (isSecondSlot) {
+              targetMatch.team2 = winnerTeam;
+            } else {
+              targetMatch.team1 = winnerTeam;
+            }
+            // Recalculate AI probabilities for advanced matchup
+            if (targetMatch.team1 && targetMatch.team2) {
+              const p1 = getWinProb(targetMatch.team1.skill_rating || 1200, targetMatch.team2.skill_rating || 1200);
+              targetMatch.ai_insights = {
+                team1_win_probability: p1,
+                team2_win_probability: Math.round((1 - p1) * 100) / 100
+              };
+            }
+          }
+        }
+      });
+    }
+  }
+
+  return res.json(bracketRes);
 });
 
 // Proxy to FastAPI AI Service for Ranking Calculations
