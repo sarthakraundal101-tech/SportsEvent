@@ -84,9 +84,13 @@ export default function App() {
       {scoreModalMatch && (
         <MatchScoreModal 
           match={scoreModalMatch} 
+          selectedEvent={selectedEvent}
           onClose={() => setScoreModalMatch(null)} 
           onScoreUpdated={() => {
             loadTeams();
+            if (scoreModalMatch?.refreshBracket) {
+              scoreModalMatch.refreshBracket();
+            }
           }} 
         />
       )}

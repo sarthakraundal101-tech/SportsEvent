@@ -92,7 +92,7 @@ export default function BracketVisualizer({ selectedEvent, onOpenScoreModal }) {
                         <span>{m.match_id} • {m.round_name}</span>
                         <button 
                           style={{ background: 'none', border: 'none', color: 'var(--primary-cyan)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                          onClick={() => onOpenScoreModal(m)}
+                          onClick={() => onOpenScoreModal({...m, refreshBracket: handleGenerateBracket})}
                         >
                           <Edit3 size={12} /> Score
                         </button>
@@ -106,13 +106,18 @@ export default function BracketVisualizer({ selectedEvent, onOpenScoreModal }) {
                             {t1 ? t1.name : 'TBD'}
                           </span>
                         </div>
-                        {t1 && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {m.status === 'Completed' && (
+                            <span style={{ fontWeight: 800, color: 'var(--primary-cyan)', fontSize: '0.95rem' }}>
+                              {m.team1_score}
+                            </span>
+                          )}
+                          {t1 && (
                             <span className="badge" style={{ background: 'rgba(0, 240, 255, 0.1)', color: 'var(--primary-cyan)', fontSize: '0.7rem' }}>
                               AI {winProb1}%
                             </span>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
 
                       {/* Team 2 */}
@@ -123,13 +128,18 @@ export default function BracketVisualizer({ selectedEvent, onOpenScoreModal }) {
                             {t2 ? t2.name : (m.is_bye ? 'BYE' : 'TBD')}
                           </span>
                         </div>
-                        {t2 && !m.is_bye && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {m.status === 'Completed' && !m.is_bye && (
+                            <span style={{ fontWeight: 800, color: 'var(--primary-amber)', fontSize: '0.95rem' }}>
+                              {m.team2_score}
+                            </span>
+                          )}
+                          {t2 && !m.is_bye && (
                             <span className="badge" style={{ background: 'rgba(255, 170, 0, 0.1)', color: 'var(--primary-amber)', fontSize: '0.7rem' }}>
                               AI {winProb2}%
                             </span>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
                   );

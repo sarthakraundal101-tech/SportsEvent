@@ -109,23 +109,32 @@ function saveDB(dbObj) {
 let db = loadDB();
 
 // Helper fallback bracket generator
-function generateFallbackBracket(teamList) {
+function generateFallbackBracket(teamList, savedMatches = []) {
   if (!teamList || teamList.length === 0) {
     return { rounds: [], ai_summary: "No teams available to generate bracket. Please register teams first." };
   }
   const sorted = [...teamList].sort((a, b) => (b.skill_rating || 1200) - (a.skill_rating || 1200));
+  const matchesMap = new Map(savedMatches.map(m => [m.id, m]));
+
   const rounds = [
     {
       round_number: 1,
       round_name: "Round 1",
-      matches: sorted.map((t, idx) => ({
-        match_id: `R1-M${idx+1}`,
-        round: 1,
-        round_name: `Match ${idx+1}`,
-        team1: t,
-        team2: null,
-        ai_insights: { team1_win_probability: 1.0, team2_win_probability: 0.0, predicted_winner_id: t.id }
-      }))
+      matches: sorted.map((t, idx) => {
+        const mId = `R1-M${idx+1}`;
+        const saved = matchesMap.get(mId);
+        return {
+          match_id: mId,
+          round: 1,
+          round_name: `Match ${idx+1}`,
+          team1: t,
+          team2: null,
+          team1_score: saved ? saved.team1_score : 0,
+          team2_score: saved ? saved.team2_score : 0,
+          winner_id: saved ? saved.winner_id : t.id,
+          ai_insights: { team1_win_probability: 1.0, team2_win_probability: 0.0, predicted_winner_id: t.id }
+        };
+      })
     }
   ];
   return { rounds, ai_summary: "Generated AI skill-seeded tournament bracket." };
@@ -213,31 +222,82 @@ app.get('/api/matches', async (req, res) => {
 });
 
 app.post('/api/matches/score', async (req, res) => {
-  const { matchId, team1_score, team2_score, winner_id } = req.body;
+  const { matchId, eventId, team1_id, team2_id, team1_score, team2_score, winner_id } = req.body;
+  const s1 = parseInt(team1_score) || 0;
+  const s2 = parseInt(team2_score) || 0;
+  const targetEvt = eventId || "evt-1";
   
   if (isMongoConnected) {
     const match = await MatchModel.findOneAndUpdate(
       { id: matchId },
       {
-        team1_score: parseInt(team1_score),
-        team2_score: parseInt(team2_score),
+        id: matchId,
+        eventId: targetEvt,
+        team1_id: team1_id,
+        team2_id: team2_id,
+        team1_score: s1,
+        team2_score: s2,
         winner_id: winner_id,
         status: "Completed"
       },
-      { new: true }
+      { new: true, upsert: true }
     );
+
+    // Update Team W/L & Points in MongoDB
+    if (winner_id === team1_id) {
+      await TeamModel.findOneAndUpdate({ id: team1_id }, { $inc: { wins: 1, points_scored: s1, points_conceded: s2 } });
+      if (team2_id) await TeamModel.findOneAndUpdate({ id: team2_id }, { $inc: { losses: 1, points_scored: s2, points_conceded: s1 } });
+    } else if (winner_id === team2_id) {
+      await TeamModel.findOneAndUpdate({ id: team2_id }, { $inc: { wins: 1, points_scored: s2, points_conceded: s1 } });
+      if (team1_id) await TeamModel.findOneAndUpdate({ id: team1_id }, { $inc: { losses: 1, points_scored: s1, points_conceded: s2 } });
+    }
+
     return res.json({ message: "Score updated successfully", match });
   }
 
-  const match = db.matches.find(m => m.id === matchId);
+  let match = db.matches.find(m => m.id === matchId);
   if (!match) {
-    return res.status(404).json({ error: "Match not found" });
+    match = {
+      id: matchId,
+      eventId: targetEvt,
+      team1_id,
+      team2_id,
+      team1_score: s1,
+      team2_score: s2,
+      winner_id,
+      status: "Completed"
+    };
+    db.matches.push(match);
+  } else {
+    match.team1_score = s1;
+    match.team2_score = s2;
+    match.winner_id = winner_id;
+    match.status = "Completed";
   }
 
-  match.team1_score = parseInt(team1_score);
-  match.team2_score = parseInt(team2_score);
-  match.winner_id = winner_id;
-  match.status = "Completed";
+  // Update in-memory team stats
+  const t1 = db.teams.find(t => t.id === team1_id);
+  const t2 = db.teams.find(t => t.id === team2_id);
+
+  if (t1 && winner_id === t1.id) {
+    t1.wins = (t1.wins || 0) + 1;
+    t1.points_scored = (t1.points_scored || 0) + s1;
+    t1.points_conceded = (t1.points_conceded || 0) + s2;
+    if (t2) {
+      t2.losses = (t2.losses || 0) + 1;
+      t2.points_scored = (t2.points_scored || 0) + s2;
+      t2.points_conceded = (t2.points_conceded || 0) + s1;
+    }
+  } else if (t2 && winner_id === t2.id) {
+    t2.wins = (t2.wins || 0) + 1;
+    t2.points_scored = (t2.points_scored || 0) + s2;
+    t2.points_conceded = (t2.points_conceded || 0) + s1;
+    if (t1) {
+      t1.losses = (t1.losses || 0) + 1;
+      t1.points_scored = (t1.points_scored || 0) + s1;
+      t1.points_conceded = (t1.points_conceded || 0) + s2;
+    }
+  }
 
   saveDB(db);
   res.json({ message: "Score updated successfully", match });
@@ -246,9 +306,17 @@ app.post('/api/matches/score', async (req, res) => {
 // Proxy to FastAPI AI Service for Tournament Bracket Generation
 app.post('/api/ai/generate-bracket', async (req, res) => {
   const { eventId } = req.body;
+  const targetEvt = eventId || "evt-1";
+  
   const eventTeams = isMongoConnected 
-    ? await TeamModel.find({ eventId: eventId || "evt-1" }) 
-    : db.teams.filter(t => t.eventId === (eventId || "evt-1"));
+    ? await TeamModel.find({ eventId: targetEvt }) 
+    : db.teams.filter(t => t.eventId === targetEvt);
+
+  const eventMatches = isMongoConnected
+    ? await MatchModel.find({ eventId: targetEvt })
+    : db.matches.filter(m => m.eventId === targetEvt);
+
+  const matchesMap = new Map(eventMatches.map(m => [m.id, m]));
 
   if (!eventTeams || eventTeams.length === 0) {
     return res.json({
@@ -263,10 +331,26 @@ app.post('/api/ai/generate-bracket', async (req, res) => {
       format: "single_elimination",
       seed_by_ai_skill: true
     }, { timeout: 3000 });
+    
+    // Attach saved scores to AI response rounds
+    if (aiResponse.data && aiResponse.data.rounds) {
+      aiResponse.data.rounds.forEach(r => {
+        r.matches.forEach(m => {
+          const saved = matchesMap.get(m.match_id);
+          if (saved) {
+            m.team1_score = saved.team1_score;
+            m.team2_score = saved.team2_score;
+            m.winner_id = saved.winner_id;
+            m.status = saved.status;
+          }
+        });
+      });
+    }
+
     return res.json(aiResponse.data);
   } catch (err) {
     console.log("FastAPI AI Service offline/unreachable, utilizing Node fallback bracket engine.");
-    const fallback = generateFallbackBracket(eventTeams);
+    const fallback = generateFallbackBracket(eventTeams, eventMatches);
     return res.json(fallback);
   }
 });

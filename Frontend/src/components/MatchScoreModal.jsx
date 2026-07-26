@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { updateMatchScore } from '../services/api';
 import { Trophy, Check, X } from 'lucide-react';
 
-export default function MatchScoreModal({ match, onClose, onScoreUpdated }) {
+export default function MatchScoreModal({ match, selectedEvent, onClose, onScoreUpdated }) {
   const t1 = match?.team1;
   const t2 = match?.team2;
 
@@ -14,6 +14,9 @@ export default function MatchScoreModal({ match, onClose, onScoreUpdated }) {
     e.preventDefault();
     await updateMatchScore({
       matchId: match.match_id || match.id,
+      eventId: selectedEvent ? selectedEvent.id : 'evt-1',
+      team1_id: t1?.id,
+      team2_id: t2?.id,
       team1_score: parseInt(score1),
       team2_score: parseInt(score2),
       winner_id: winnerId
