@@ -21,7 +21,9 @@ export default function MatchScoreModal({ match, selectedEvent, onClose, onScore
       team2_score: parseInt(score2),
       winner_id: winnerId
     });
-    onScoreUpdated();
+
+    const winnerName = winnerId === t1?.id ? t1?.name : (winnerId === t2?.id ? t2?.name : 'Team');
+    onScoreUpdated(winnerName);
     onClose();
   };
 

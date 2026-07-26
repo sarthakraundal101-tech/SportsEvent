@@ -5,6 +5,7 @@ import TeamManager from './components/TeamManager';
 import BracketVisualizer from './components/BracketVisualizer';
 import RankingLeaderboard from './components/RankingLeaderboard';
 import MatchScoreModal from './components/MatchScoreModal';
+import CelebrationOverlay from './components/CelebrationOverlay';
 import { fetchEvents, fetchTeams } from './services/api';
 
 export default function App() {
@@ -13,6 +14,7 @@ export default function App() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [teams, setTeams] = useState([]);
   const [scoreModalMatch, setScoreModalMatch] = useState(null);
+  const [celebrationWinner, setCelebrationWinner] = useState(null);
 
   const loadEvents = async () => {
     const data = await fetchEvents();
@@ -86,12 +88,22 @@ export default function App() {
           match={scoreModalMatch} 
           selectedEvent={selectedEvent}
           onClose={() => setScoreModalMatch(null)} 
-          onScoreUpdated={() => {
+          onScoreUpdated={(winnerName) => {
             loadTeams();
             if (scoreModalMatch?.refreshBracket) {
               scoreModalMatch.refreshBracket();
             }
+            if (winnerName) {
+              setCelebrationWinner(winnerName);
+            }
           }} 
+        />
+      )}
+
+      {celebrationWinner && (
+        <CelebrationOverlay 
+          winnerName={celebrationWinner} 
+          onClose={() => setCelebrationWinner(null)} 
         />
       )}
     </div>
